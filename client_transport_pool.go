@@ -7,81 +7,45 @@ import (
 type DefaultTransportPool struct {
 	m   sync.Map
 	mtx sync.Mutex
-	q   map[string]chan struct{}
+	q   map[string]*sync.Mutex
 }
 
 func NewDefaultTransportPool() *DefaultTransportPool {
 	return &DefaultTransportPool{
-		q: make(map[string]chan struct{}),
+		q: make(map[string]*sync.Mutex),
 	}
 }
 
 func (p *DefaultTransportPool) Get(transportKey TransportKey,
 	typ *protocolType) (*Transport, error) {
 	v, exist := p.m.Load(transportKey.Key())
-	if !exist {
-	InitTransport:
-		// Queue
-		p.mtx.Lock()
-		c, exist2 := p.q[transportKey.Key()]
-		if !exist2 {
-			c = make(chan struct{})
-			p.q[transportKey.Key()] = c
-		}
-		p.mtx.Unlock()
-
-		v, exist = p.m.Load(transportKey.Key())
-		if exist {
-			p.mtx.Lock()
-			c, exist2 = p.q[transportKey.Key()]
-			if exist2 {
-				close(c)
-				delete(p.q, transportKey.Key())
-			}
-			p.mtx.Unlock()
-			return v.(*Transport), nil
-		}
-
-		if exist2 {
-			<-c
-			v, exist2 := p.m.Load(transportKey.Key())
-			if exist2 {
-				return v.(*Transport), nil
-			} else {
-				goto InitTransport
-			}
-		} else {
-			transport, err := NewTransport(transportKey, typ)
-			if err != nil {
-				p.mtx.Lock()
-				close(p.q[transportKey.Key()])
-				delete(p.q, transportKey.Key())
-				p.mtx.Unlock()
-				return nil, err
-			} else {
-				p.mtx.Lock()
-				p.m.Store(transportKey.Key(), transport)
-				close(p.q[transportKey.Key()])
-				delete(p.q, transportKey.Key())
-				p.mtx.Unlock()
-				return transport, nil
-			}
-		}
-
-		// TODO
-		// Burst requests lead to a large number of links?
-		//transport, err := NewTransport(transportKey, typ)
-		//if err != nil {
-		//	return nil, err
-		//}
-
-		//ac, loaded := p.m.LoadOrStore(transportKey.Key(), transport)
-		//if loaded {
-		//	transport.Close()
-		//	return ac, nil
-		//} else {
-		//	return transport, nil
-		//}
+	if exist {
+		// fast path
+		return v.(*Transport), nil
 	}
-	return v.(*Transport), nil
+	// slow path
+	// Queue
+	p.mtx.Lock()
+	kmtx, exist := p.q[transportKey.Key()]
+	if !exist {
+		kmtx = new(sync.Mutex)
+		p.q[transportKey.Key()] = kmtx
+	}
+	p.mtx.Unlock()
+
+	kmtx.Lock()
+	defer kmtx.Unlock()
+	// init transport and set in map
+	v, exist = p.m.Load(transportKey.Key())
+	if exist {
+		return v.(*Transport), nil
+	}
+
+	transport, err := NewTransport(transportKey, typ)
+	if err != nil {
+		return nil, err
+	}
+
+	p.m.Store(transportKey.Key(), transport)
+	return transport, nil
 }
