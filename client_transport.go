@@ -350,7 +350,7 @@ func (t *Transport) Timeout(msgId string) {
 	if sm == nil {
 		return
 	}
-	log.Printf("msgId:%s The state machine timed out", msgId)
+	log.Printf("msgId:%s The state machine timed out ", msgId)
 	t.executor.Timeout(sm, msgId)
 }
 
