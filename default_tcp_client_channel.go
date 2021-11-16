@@ -231,6 +231,11 @@ func (hatcg *HATcpClientChannelGenerator) IsTry(err error) bool {
 }
 
 func (hatcg *HATcpClientChannelGenerator) GC(ch Channel) {
+	if ch == nil {
+		log.Printf("HATcpClientChannelGenerator GC ch is nil")
+		return
+	}
+
 	tcpChannel, ok := ch.(*TcpChannel)
 	if ok {
 		return
