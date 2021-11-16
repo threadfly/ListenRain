@@ -49,3 +49,7 @@ func (p *DefaultTransportPool) Get(transportKey TransportKey,
 	p.m.Store(transportKey.Key(), transport)
 	return transport, nil
 }
+
+func (p *DefaultTransportPool) Drop(transportKey TransportKey) {
+	p.m.Delete(transportKey.Key())
+}
