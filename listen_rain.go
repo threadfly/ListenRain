@@ -1,10 +1,15 @@
 package listenrain
 
 import (
+	"errors"
 	"io"
 	"log"
 	"sync"
 	"time"
+)
+
+var (
+	ErrInvalidTransport = errors.New("client transport is invalid")
 )
 
 type StatMachine interface {
@@ -26,6 +31,7 @@ type Queue interface {
 	Push(payload []byte)
 	Pop() (payload []byte)
 	PopNoBlocking() (payload []byte)
+	Drop()
 }
 
 type EnDecPacket interface {
@@ -67,6 +73,7 @@ type TransportKey interface {
 
 type TransportPool interface {
 	Get(TransportKey, *protocolType) (*Transport, error)
+	Drop(TransportKey)
 }
 
 // implements by Transport
@@ -151,6 +158,16 @@ func (lr *ListenRain) Send(ptyp ProtocolType, sm StatMachine, key TransportKey, 
 		return err
 	}
 
+	if transport.state == TRANSPORT_DOWN {
+		lr.transportPool.Drop(key)
+		go func() {
+			// delay background gc
+			time.Sleep(10 * time.Second)
+			transport.Drop()
+		}()
+		return ErrInvalidTransport
+	}
+
 	err = transport.Send(sm, key, msg)
 	if err != nil {
 		return err
@@ -163,6 +180,16 @@ func (lr *ListenRain) SyncSend(ptyp ProtocolType, key TransportKey, msg interfac
 	transport, err := lr.transportPool.Get(key, protoTyps)
 	if err != nil {
 		return nil, err
+	}
+
+	if transport.state == TRANSPORT_DOWN {
+		lr.transportPool.Drop(key)
+		go func() {
+			// delay background gc
+			time.Sleep(10 * time.Second)
+			transport.Drop()
+		}()
+		return nil, ErrInvalidTransport
 	}
 
 	ssm := lr.ssmPool.Get().(*SyncStatMachine)

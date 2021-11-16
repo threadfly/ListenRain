@@ -49,6 +49,7 @@ func (q *DefaultQueue) PopNoBlocking() (payload []byte) {
 		if q.lastPopCount >= len(q.q) {
 			q.lastPopCount = 0
 			q.ticker.Stop()
+			q.ticker = nil
 			return true
 		}
 		return false
@@ -70,6 +71,10 @@ func (q *DefaultQueue) PopNoBlocking() (payload []byte) {
 			return nil
 		}
 	}
+}
+
+func (q *DefaultQueue) Drop() {
+	close(q.q)
 }
 
 func DefaultQueueGenerator(key TransportKey) (Queue, error) {

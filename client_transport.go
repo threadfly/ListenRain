@@ -13,6 +13,14 @@ const (
 	DEFAULT_TIMEOUT = 10 // sec
 )
 
+type TransportState uint8
+
+const (
+	TRANSPORT_WORKING TransportState = iota
+	TRANSPORT_RECOVER
+	TRANSPORT_DOWN
+)
+
 type Transport struct {
 	q               Queue
 	edP             EnDecPacket
@@ -28,6 +36,7 @@ type Transport struct {
 	t               *timer
 	tq              chan string
 	timeout         time.Duration
+	state           TransportState
 }
 
 func NewTransport(transportKey TransportKey, pt *protocolType) (*Transport, error) {
@@ -72,6 +81,7 @@ func NewTransport(transportKey TransportKey, pt *protocolType) (*Transport, erro
 		statmachinePool: smp,
 		t:               NewTimer(),
 		tq:              make(chan string, 128),
+		state:           TRANSPORT_WORKING,
 	}
 
 	transport.init()
@@ -170,6 +180,7 @@ func (t *Transport) runLoop() {
 		}
 
 		if t.err != nil && t.cg.IsTry(t.err) {
+			t.state = TRANSPORT_RECOVER
 			exit := false
 			ch, err := t.cg.Next()
 			if err != nil {
@@ -198,6 +209,7 @@ func (t *Transport) runLoop() {
 
 		break
 	}
+	t.state = TRANSPORT_DOWN
 }
 
 // TODO 从池中剔除
@@ -308,6 +320,10 @@ func (t *Transport) startTimer() {
 		}
 	}
 
+	for msgId := range t.tq {
+		t.Timeout(msgId)
+	}
+
 	tc.Stop()
 }
 
@@ -336,4 +352,12 @@ func (t *Transport) Timeout(msgId string) {
 	}
 	log.Printf("msgId:%s The state machine timed out", msgId)
 	t.executor.Timeout(sm, msgId)
+}
+
+func (t *Transport) Drop() {
+	sndPayload := t.q.PopNoBlocking()
+	for sndPayload != nil {
+		sndPayload = t.q.PopNoBlocking()
+	}
+	t.q.Drop()
 }
