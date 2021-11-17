@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"time"
 )
 
 type TCPEndpointStat uint8
@@ -85,7 +86,7 @@ func NewTcpClientChannelGenerator(ip string, port int) (ChannelGenerator, error)
 }
 
 func (tcg *TcpClientChannelGenerator) Next() (Channel, error) {
-	c, err := net.Dial(tcg.Addr.Network(), tcg.Addr.String())
+	c, err := net.DialTimeout(tcg.Addr.Network(), tcg.Addr.String(), 10*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +204,9 @@ func (hatcg *HATcpClientChannelGenerator) Next() (Channel, error) {
 		break
 	}
 
-	c, err := net.Dial(hatcg.addrs[hatcg.point].Network(), hatcg.addrs[hatcg.point].String())
+	c, err := net.DialTimeout(hatcg.addrs[hatcg.point].Network(),
+		hatcg.addrs[hatcg.point].String(),
+		10*time.Second)
 	if err != nil {
 		return nil, err
 	}
